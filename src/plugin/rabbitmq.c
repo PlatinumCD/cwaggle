@@ -74,7 +74,7 @@ RabbitMQConn* rabbitmq_conn_new(const PluginConfig *config) {
 
     int status = amqp_socket_open(socket, config->host, config->port);
     if (status) {
-        fprintf(stderr, "rabbitmq_conn_new: socket_open failed\n");
+        fprintf(stderr, "rabbitmq_conn_new: socket_open failed with status %d\n", status);
         free(rc);
         return NULL;
     }

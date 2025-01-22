@@ -13,11 +13,16 @@ PluginConfig* plugin_config_new(const char *username,
         return NULL;
     }
 
+    cfg->username = NULL;
+    cfg->password = NULL;
+    cfg->host = NULL;
+    cfg->app_id = NULL;
+
     // Duplicate strings safely
     cfg->username = strdup(username ? username : "plugin");
     cfg->password = strdup(password ? password : "plugin");
-    cfg->host     = strdup(host ? host : "localhost");
-    cfg->port     = port;
+    cfg->host     = strdup(host ? host : "rabbitmq");
+    cfg->port     = port ? port : 5672;
     cfg->app_id   = strdup(app_id ? app_id : "");
 
     if (!cfg->username || !cfg->password || !cfg->host || !cfg->app_id) {
@@ -33,9 +38,11 @@ void plugin_config_free(PluginConfig *config) {
     if (!config) {
         return;
     }
-    free(config->username);
-    free(config->password);
-    free(config->host);
-    free(config->app_id);
+
+    if (config->username) free(config->username);
+    if (config->password) free(config->password);
+    if (config->host) free(config->host);
+    if (config->app_id) free(config->app_id);
+
     free(config);
 }
