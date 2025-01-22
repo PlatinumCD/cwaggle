@@ -8,8 +8,23 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_FLAGS "-Wall -Wextra -O2 -fPIC")
 set(CMAKE_SHARED_LINKER_FLAGS "-shared")
 
+# User-defined options for external libraries
+option(RABBITMQ_DIR "Path to RabbitMQ installation directory" "")
+option(CJSON_DIR "Path to cJSON installation directory" "")
+
 # Include directories
 include_directories(include)
+
+# Add user-specified include paths
+if(RABBITMQ_DIR)
+    include_directories(${RABBITMQ_DIR}/include)
+    link_directories(${RABBITMQ_DIR}/lib)
+endif()
+
+if(CJSON_DIR)
+    include_directories(${CJSON_DIR}/include)
+    link_directories(${CJSON_DIR}/lib)
+endif()
 
 # Source files
 set(SRCS
