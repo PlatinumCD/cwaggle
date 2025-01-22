@@ -101,5 +101,3 @@ COPY --from=build /build/rabbitmq-c/include/ /usr/include/
 # Copy cwaggle libraries and headers
 COPY --from=build /build/cwaggle/lib/ /usr/lib/
 COPY --from=build /build/cwaggle/include/ /usr/include/
-
-COPY myapp.c /src/myapp.c

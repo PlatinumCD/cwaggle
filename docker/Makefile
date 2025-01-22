@@ -5,7 +5,7 @@ IMAGE=base
 all: image
 
 image:
-	docker buildx build -t "waggle/plugin-c-base:$(RELEASE)-$(IMAGE)" --load .
+	docker buildx build -t "platinumcd/plugin-cwaggle-base:$(RELEASE)-$(IMAGE)" --load .
 
 push:
-	docker buildx build -t "waggle/plugin--cbase:$(RELEASE)-$(IMAGE)" --platform "$(PLATFORM)" --push .
+	docker buildx build -t "platinumcd/plugin-cwaggle-base:$(RELEASE)-$(IMAGE)" --platform "$(PLATFORM)" --push .
