@@ -1,6 +1,7 @@
 #include "waggle/plugin.h"
 #include "waggle/config.h"
 #include "waggle/rabbitmq.h"
+#include "waggle/filepublisher.h"
 #include "waggle/wagglemsg.h"
 #include "waggle/timeutil.h"
 #include <pthread.h>
@@ -104,6 +105,7 @@ static PublishItem* publish_queue_pop(PublishQueue *q) {
 // The Plugin struct
 struct Plugin {
     PluginConfig  *config;
+    FilePublisher *filepub;
     RabbitMQConn  *mq;      // a single rabbitmq connection
     PublishQueue   queue;
 
@@ -146,6 +148,15 @@ Plugin* plugin_new(PluginConfig *config) {
         return NULL;
     }
     p->config = config;
+
+    const char *logdir = getenv("PYWAGGLE_LOG_DIR");
+    if (logdir) {
+        p->filepub = filepublisher_new(logdir);
+        if (!p->filepub) {
+            fprintf(stderr, "Warning: Could not open FilePublisher in %s\n", logdir);
+        }
+    }
+
     publish_queue_init(&p->queue);
 
     // connect to RabbitMQ
@@ -171,6 +182,8 @@ void plugin_free(Plugin *plugin) {
     if (!plugin) {
         return;
     }
+
+
     // signal the thread to stop
     atomic_store(&plugin->stop_flag, 1);
     // push a dummy item to wake thread
@@ -184,6 +197,9 @@ void plugin_free(Plugin *plugin) {
 
     // close rabbitmq
     rabbitmq_conn_free(plugin->mq);
+
+    // free publisher
+    filepublisher_free(plugin->filepub);
 
     // free config
     plugin_config_free(plugin->config);
@@ -205,6 +221,11 @@ int plugin_publish(Plugin *plugin,
     WaggleMsg *msg = wagglemsg_new(name, value, timestamp, meta_json ? meta_json : "{}");
     if (!msg) {
         return -2;
+    }
+
+    // Log to puplisher
+    if (plugin->filepub) {
+        filepublisher_log(plugin->filepub, msg);
     }
 
     // serialize to JSON

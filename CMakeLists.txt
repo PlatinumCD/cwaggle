@@ -32,6 +32,7 @@ set(SRCS
     src/plugin/config.c
     src/plugin/rabbitmq.c
     src/plugin/uploader.c
+    src/plugin/filepublisher.c
     src/timeutil.c
     src/wagglemsg.c
 )
