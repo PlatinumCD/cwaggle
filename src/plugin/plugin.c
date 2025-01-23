@@ -11,7 +11,12 @@
 #include <stdatomic.h>
 #include <errno.h>
 
-// A small struct for queued messages: scope + payload data
+#ifdef DEBUG
+  #define DBGPRINT(...) do { fprintf(stderr, "[DEBUG plugin] "); fprintf(stderr, __VA_ARGS__); } while(0)
+#else
+  #define DBGPRINT(...) do {} while(0)
+#endif
+
 typedef struct PublishItem {
     char *scope;
     char *data;
@@ -19,9 +24,6 @@ typedef struct PublishItem {
     struct PublishItem *next;
 } PublishItem;
 
-/**
- * A simple lock-based queue for PublishItems.
- */
 typedef struct {
     PublishItem *head;
     PublishItem *tail;
@@ -30,6 +32,7 @@ typedef struct {
 } PublishQueue;
 
 static void publish_queue_init(PublishQueue *q) {
+    DBGPRINT("publish_queue_init() called.\n");
     q->head = NULL;
     q->tail = NULL;
     pthread_mutex_init(&q->lock, NULL);
@@ -37,7 +40,7 @@ static void publish_queue_init(PublishQueue *q) {
 }
 
 static void publish_queue_destroy(PublishQueue *q) {
-    // free any leftover items
+    DBGPRINT("publish_queue_destroy() called.\n");
     pthread_mutex_lock(&q->lock);
     PublishItem *item = q->head;
     while (item) {
@@ -54,20 +57,25 @@ static void publish_queue_destroy(PublishQueue *q) {
 }
 
 static void publish_queue_push(PublishQueue *q, const char *scope, const char *data, int data_len) {
-    if (!scope || !data) {
+    DBGPRINT("publish_queue_push(scope=%s, data_len=%d)\n", scope, data_len);
+    if (!scope || !data) return;
+
+    PublishItem *item = malloc(sizeof(PublishItem));
+    if (!item) {
+        DBGPRINT("publish_queue_push: malloc failed.\n");
         return;
     }
-    PublishItem *item = (PublishItem*)malloc(sizeof(PublishItem));
-    if (!item) return;
 
     item->scope = strdup(scope);
-    item->data = (char*)malloc(data_len);
-    if (item->scope == NULL || item->data == NULL) {
+    item->data = malloc(data_len);
+    if (!item->scope || !item->data) {
+        DBGPRINT("publish_queue_push: strdup/malloc failed.\n");
         free(item->scope);
         free(item->data);
         free(item);
         return;
     }
+
     memcpy(item->data, data, data_len);
     item->data_len = data_len;
     item->next = NULL;
@@ -84,11 +92,8 @@ static void publish_queue_push(PublishQueue *q, const char *scope, const char *d
     pthread_mutex_unlock(&q->lock);
 }
 
-/**
- * Blocking pop. If the queue is empty, we wait on cond.
- * Must free the returned item when done.
- */
 static PublishItem* publish_queue_pop(PublishQueue *q) {
+    DBGPRINT("publish_queue_pop() waiting for item...\n");
     pthread_mutex_lock(&q->lock);
     while (!q->head) {
         pthread_cond_wait(&q->cond, &q->lock);
@@ -99,58 +104,58 @@ static PublishItem* publish_queue_pop(PublishQueue *q) {
         q->tail = NULL;
     }
     pthread_mutex_unlock(&q->lock);
+    DBGPRINT("publish_queue_pop() got item.\n");
     return item;
 }
 
-// The Plugin struct
 struct Plugin {
     PluginConfig  *config;
     FilePublisher *filepub;
-    RabbitMQConn  *mq;      // a single rabbitmq connection
+    RabbitMQConn  *mq;
     PublishQueue   queue;
-
-    // Background thread to flush messages
     pthread_t thread;
     _Atomic int stop_flag;
 };
 
-/**
- * The background thread: connects to RabbitMQ (already done in plugin_new),
- * then repeatedly pops messages from the queue and publishes them.
- */
 static void* plugin_publisher_thread(void *arg) {
+    DBGPRINT("plugin_publisher_thread started.\n");
     Plugin *p = (Plugin*)arg;
+
     while (!atomic_load(&p->stop_flag)) {
-        // pop next message
         PublishItem *item = publish_queue_pop(&p->queue);
         if (!item) {
+            DBGPRINT("plugin_publisher_thread: Null item popped?\n");
             continue;
         }
-        // publish
+        DBGPRINT("Publishing item with scope=%s.\n", item->scope);
         if (p->mq) {
             rabbitmq_publish(p->mq, item->scope, item->data, item->data_len);
         }
-        // cleanup
         free(item->scope);
         free(item->data);
         free(item);
     }
+    DBGPRINT("plugin_publisher_thread: stop_flag set, exiting.\n");
     return NULL;
 }
 
 Plugin* plugin_new(PluginConfig *config) {
+    DBGPRINT("plugin_new() called.\n");
     if (!config) {
         fprintf(stderr, "plugin_new: config is NULL\n");
         return NULL;
     }
-    Plugin *p = (Plugin*)calloc(1, sizeof(Plugin));
+
+    Plugin *p = calloc(1, sizeof(Plugin));
     if (!p) {
+        DBGPRINT("calloc failed for Plugin.\n");
         return NULL;
     }
     p->config = config;
 
     const char *logdir = getenv("PYWAGGLE_LOG_DIR");
     if (logdir) {
+        DBGPRINT("PYWAGGLE_LOG_DIR=%s\n", logdir);
         p->filepub = filepublisher_new(logdir);
         if (!p->filepub) {
             fprintf(stderr, "Warning: Could not open FilePublisher in %s\n", logdir);
@@ -159,7 +164,6 @@ Plugin* plugin_new(PluginConfig *config) {
 
     publish_queue_init(&p->queue);
 
-    // connect to RabbitMQ
     p->mq = rabbitmq_conn_new(config);
     if (!p->mq) {
         fprintf(stderr, "plugin_new: failed to connect to RabbitMQ\n");
@@ -168,44 +172,34 @@ Plugin* plugin_new(PluginConfig *config) {
     }
 
     atomic_store(&p->stop_flag, 0);
-    // create the background thread
     if (pthread_create(&p->thread, NULL, plugin_publisher_thread, p) != 0) {
         fprintf(stderr, "plugin_new: could not create publisher thread\n");
         plugin_free(p);
         return NULL;
     }
-
+    DBGPRINT("plugin_new() success.\n");
     return p;
 }
 
 void plugin_free(Plugin *plugin) {
-    if (!plugin) {
-        return;
-    }
+    DBGPRINT("plugin_free() called.\n");
+    if (!plugin) return;
 
-
-    // signal the thread to stop
     atomic_store(&plugin->stop_flag, 1);
-    // push a dummy item to wake thread
     publish_queue_push(&plugin->queue, "dummy", "dummy", 5);
 
-    // wait for thread to finish
     pthread_join(plugin->thread, NULL);
 
-    // free queue
     publish_queue_destroy(&plugin->queue);
 
-    // close rabbitmq
     rabbitmq_conn_free(plugin->mq);
 
-    // free publisher
     filepublisher_free(plugin->filepub);
 
-    // free config
     plugin_config_free(plugin->config);
 
-    // free plugin
     free(plugin);
+    DBGPRINT("plugin_free() done.\n");
 }
 
 int plugin_publish(Plugin *plugin,
@@ -214,38 +208,36 @@ int plugin_publish(Plugin *plugin,
                    const char *value,
                    int64_t timestamp,
                    const char *meta_json) {
+    DBGPRINT("plugin_publish(scope=%s, name=%s)\n", scope ? scope : "NULL", name ? name : "NULL");
     if (!plugin || !name || !value) {
+        DBGPRINT("plugin_publish: invalid args.\n");
         return -1;
     }
-    // build WaggleMsg
+
     WaggleMsg *msg = wagglemsg_new(name, value, timestamp, meta_json ? meta_json : "{}");
     if (!msg) {
+        DBGPRINT("Failed to create WaggleMsg.\n");
         return -2;
     }
-
-    // Log to puplisher
     if (plugin->filepub) {
+        DBGPRINT("Logging to filepublisher.\n");
         filepublisher_log(plugin->filepub, msg);
     }
 
-    // serialize to JSON
     char *json_str = wagglemsg_dump_json(msg);
     wagglemsg_free(msg);
-
     if (!json_str) {
+        DBGPRINT("Failed to dump WaggleMsg to JSON.\n");
         return -3;
     }
 
-    // push to queue
     publish_queue_push(&plugin->queue, scope ? scope : "all", json_str, (int)strlen(json_str));
     free(json_str);
-
     return 0;
 }
 
 int plugin_subscribe(Plugin *plugin, const char **topics, int n) {
-    if (!plugin || !plugin->mq) {
-        return -1;
-    }
+    DBGPRINT("plugin_subscribe() called with %d topics.\n", n);
+    if (!plugin || !plugin->mq) return -1;
     return rabbitmq_subscribe(plugin->mq, topics, n);
 }

@@ -8,6 +8,13 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_FLAGS "-Wall -Wextra -O2 -fPIC")
 set(CMAKE_SHARED_LINKER_FLAGS "-shared")
 
+# Option to enable debug printing
+option(ENABLE_DEBUG "Enable debug prints" OFF)
+if(ENABLE_DEBUG)
+    add_definitions(-DDEBUG)
+    message(STATUS "Debug prints enabled (DEBUG defined).")
+endif()
+
 # User-defined options for external libraries
 option(RABBITMQ_DIR "Path to RabbitMQ installation directory" "")
 option(CJSON_DIR "Path to cJSON installation directory" "")

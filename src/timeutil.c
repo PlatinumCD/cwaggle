@@ -2,15 +2,23 @@
 #include <time.h>
 #include <stdio.h>
 
+#ifdef DEBUG
+  #define DBGPRINT(...) do { fprintf(stderr, "[DEBUG timeutil] "); fprintf(stderr, __VA_ARGS__); } while(0)
+#else
+  #define DBGPRINT(...) do {} while(0)
+#endif
+
 int64_t waggle_get_timestamp_ns(void) {
-    // Use clock_gettime for nanosecond resolution
+    DBGPRINT("waggle_get_timestamp_ns() called.\n");
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
     return (int64_t)ts.tv_sec * 1000000000LL + ts.tv_nsec;
 }
 
 void waggle_format_time(char *buf, int bufsize) {
+    DBGPRINT("waggle_format_time() called.\n");
     if (!buf || bufsize < 1) {
+        DBGPRINT("Invalid buffer or bufsize.\n");
         return;
     }
     time_t t = time(NULL);
