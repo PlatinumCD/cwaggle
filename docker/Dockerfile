@@ -55,7 +55,8 @@ RUN git clone https://github.com/DaveGamble/cJSON.git && \
     cmake \
         -DENABLE_CJSON_UTILS=On \
         -DENABLE_CJSON_TEST=Off \
-        -DCMAKE_INSTALL_PREFIX=/build/cJSON .. && \
+        -DCMAKE_INSTALL_PREFIX=/build/cJSON \
+        .. && \
     make && \
     make install && \
     rm -rf /tmp/cJSON
