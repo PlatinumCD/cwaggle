@@ -8,11 +8,11 @@
   #define DBGPRINT(...) do {} while(0)
 #endif
 
-int64_t waggle_get_timestamp_ns(void) {
+uint64_t waggle_get_timestamp_ns(void) {
     DBGPRINT("waggle_get_timestamp_ns() called.\n");
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
-    return (int64_t)ts.tv_sec * 1000000000LL + ts.tv_nsec;
+    return (uint64_t)ts.tv_sec * 1000000000LL + ts.tv_nsec;
 }
 
 void waggle_format_time(char *buf, int bufsize) {

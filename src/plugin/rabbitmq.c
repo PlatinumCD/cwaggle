@@ -98,6 +98,14 @@ RabbitMQConn* rabbitmq_conn_new(const PluginConfig *config) {
         rabbitmq_conn_free(rc);
         return NULL;
     }
+
+    amqp_confirm_select(rc->conn, 1);
+    amqp_rpc_reply_t reply = amqp_get_rpc_reply(rc->conn);
+    if (reply.reply_type != AMQP_RESPONSE_NORMAL) {
+        fprintf(stderr, "Failed to enable publisher confirms\n");
+        return NULL;
+    }
+
     rc->connected = 1;
     DBGPRINT("Connection established.\n");
     return rc;
@@ -115,10 +123,14 @@ void rabbitmq_conn_free(RabbitMQConn *conn) {
 }
 
 int rabbitmq_publish(RabbitMQConn *conn,
+                     const char *app_id,
+                     const char *username,
                      const char *scope,
                      const void *data,
+                     int app_id_len,
+                     int username_len,
                      int data_len) {
-    DBGPRINT("rabbitmq_publish(scope=%s, data_len=%d)\n", scope ? scope : "NULL", data_len);
+    DBGPRINT("rabbitmq_publish(scope=%s, app_id=%s, user_id=%s, app_id_len=%d, user_id_len=%d, data=%s, data_len=%d)\n", scope ? scope : "NULL", app_id, username, app_id_len, username_len, (char *)data, data_len);
     if (!conn || !conn->connected) return -1;
     if (!scope || !data) return -2;
 
@@ -126,19 +138,40 @@ int rabbitmq_publish(RabbitMQConn *conn,
     message_bytes.len = data_len;
     message_bytes.bytes = (void*)data;
 
+    amqp_bytes_t app_id_bytes;
+    app_id_bytes.len = app_id_len; 
+    app_id_bytes.bytes = (void*)app_id; 
+
+    amqp_bytes_t user_id_bytes;
+    user_id_bytes.len = username_len;
+    user_id_bytes.bytes = (void*)username;
+
     amqp_basic_properties_t props;
     memset(&props, 0, sizeof(props));
-    props._flags = AMQP_BASIC_DELIVERY_MODE_FLAG;
+
+    props._flags = AMQP_BASIC_DELIVERY_MODE_FLAG | AMQP_BASIC_USER_ID_FLAG | AMQP_BASIC_APP_ID_FLAG;
     props.delivery_mode = 2; // persistent
+    props.app_id = app_id_bytes;
+    props.user_id = user_id_bytes;
 
     int status = amqp_basic_publish(conn->conn, 1,
                                     amqp_cstring_bytes("to-validator"),
                                     amqp_cstring_bytes(scope),
                                     0, 0, &props, message_bytes);
+
     if (status != AMQP_STATUS_OK) {
         fprintf(stderr, "rabbitmq_publish: amqp_basic_publish failed.\n");
         return -3;
     }
+
+    struct timeval timeout = { .tv_sec = 1, .tv_usec = 0 };
+    amqp_publisher_confirm_t result;
+    amqp_rpc_reply_t reply = amqp_publisher_confirm_wait(conn->conn, &timeout, &result);
+    if (reply.reply_type != AMQP_RESPONSE_NORMAL) {
+        print_amqp_error(reply, "amqp_publisher_confirm_wait");
+        return -4;
+    }
+
     DBGPRINT("Publish success.\n");
     return 0;
 }

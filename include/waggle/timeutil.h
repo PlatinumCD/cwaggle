@@ -11,7 +11,7 @@ extern "C" {
  * Returns current time in nanoseconds since Unix epoch.
  * On most Unix-like systems, uses clock_gettime().
  */
-int64_t waggle_get_timestamp_ns(void);
+uint64_t waggle_get_timestamp_ns(void);
 
 /**
  * Returns current time in a human-readable string, e.g. "2025-01-01 10:00:00"

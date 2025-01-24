@@ -33,9 +33,14 @@ void rabbitmq_conn_free(RabbitMQConn *conn);
  * Returns 0 on success, nonzero on failure.
  */
 int rabbitmq_publish(RabbitMQConn *conn,
+                     const char *app_id,
+                     const char *username,
                      const char *scope,
                      const void *data,
-                     int data_len);
+                     int app_id_len,
+                     int username_len,
+                     int data_len); 
+
 
 /**
  * Subscribes to the given topics from the "data.topic" exchange.

@@ -13,8 +13,8 @@ extern "C" {
  */
 typedef struct WaggleMsg {
     char   *name;
-    char   *value;     // For simplicity, store everything as string. (Could expand for numeric, etc.)
-    int64_t timestamp;
+    int64_t value;
+    uint64_t timestamp;
     // For the meta dictionary, we store as a single JSON-encoded string for simplicity.
     // Real code might store as a map or cJSON pointer, etc.
     char   *meta;
@@ -25,8 +25,8 @@ typedef struct WaggleMsg {
  * Returns NULL on failure.
  */
 WaggleMsg* wagglemsg_new(const char *name,
-                         const char *value,
-                         int64_t timestamp,
+                         int64_t value,
+                         uint64_t timestamp,
                          const char *meta_json);
 
 /**

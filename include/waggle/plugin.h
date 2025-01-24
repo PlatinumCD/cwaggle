@@ -39,8 +39,8 @@ void plugin_free(Plugin *plugin);
 int plugin_publish(Plugin *plugin,
                    const char *scope,
                    const char *name,
-                   const char *value,
-                   int64_t timestamp,
+                   int64_t value,
+                   uint64_t timestamp,
                    const char *meta_json);
 
 /**
