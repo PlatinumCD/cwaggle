@@ -88,6 +88,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     nano \
     libc6-dev \
     libssl-dev \
+    make \
+    git \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy cJSON libraries and headers

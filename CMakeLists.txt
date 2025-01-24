@@ -35,13 +35,13 @@ endif()
 
 # Source files
 set(SRCS
-    src/plugin/plugin.c
-    src/plugin/config.c
-    src/plugin/rabbitmq.c
-    src/plugin/uploader.c
-    src/plugin/filepublisher.c
-    src/timeutil.c
-    src/wagglemsg.c
+    src/waggle/plugin/plugin.c
+    src/waggle/plugin/config.c
+    src/waggle/plugin/rabbitmq.c
+    src/waggle/plugin/uploader.c
+    src/waggle/plugin/filepublisher.c
+    src/waggle/data/timeutil.c
+    src/waggle/data/wagglemsg.c
 )
 
 # Target library
