@@ -9,3 +9,6 @@ image:
 
 push:
 	docker buildx build -t "platinumcd/plugin-cwaggle-base:$(RELEASE)-$(IMAGE)" --platform "$(PLATFORM)" --push .
+
+push-debug:
+	docker buildx build -t "platinumcd/plugin-cwaggle-base-debug:$(RELEASE)-$(IMAGE)" --platform "$(PLATFORM)" -f debug.Dockerfile --push .
