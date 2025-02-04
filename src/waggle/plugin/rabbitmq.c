@@ -160,7 +160,7 @@ int rabbitmq_publish(RabbitMQConn *conn,
                                     0, 0, &props, message_bytes);
 
     if (status != AMQP_STATUS_OK) {
-        fprintf(stderr, "rabbitmq_publish: amqp_basic_publish failed.\n");
+        fprintf(stderr, "rabbitmq_publish: amqp_basic_publish failed with status: %d.\n", status);
         return -3;
     }
 
