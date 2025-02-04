@@ -130,7 +130,7 @@ int rabbitmq_publish(RabbitMQConn *conn,
                      int app_id_len,
                      int username_len,
                      int data_len) {
-    DBGPRINT("rabbitmq_publish(scope=%s, app_id=%s, user_id=%s, app_id_len=%d, user_id_len=%d, data=%s, data_len=%d)\n", scope ? scope : "NULL", app_id, username, app_id_len, username_len, (char *)data, data_len);
+    DBGPRINT("rabbitmq_publish(scope=%s, app_id=%s, user_id=%s, app_id_len=%d, user_id_len=%d, data=%.*s, data_len=%d)\n", scope ? scope : "NULL", app_id, username, app_id_len, username_len, (char *)data, data_len);
     if (!conn || !conn->connected) return -1;
     if (!scope || !data) return -2;
 
