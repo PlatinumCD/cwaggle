@@ -268,8 +268,9 @@ int plugin_publish(Plugin *plugin,
         return -3;
     }
 
-    DBGPRINT("plugin_publish pushing:\n%s\n", json_str);
-    publish_queue_push(&plugin->queue, scope ? scope : "all", json_str, (int)strlen(json_str));
+    int json_len = (int)strlen(json_str);
+    DBGPRINT("plugin_publish pushing:\nlen: %d\t%s\n", json_len, json_str);
+    publish_queue_push(&plugin->queue, scope ? scope : "all", json_str, json_len);
     free(json_str);
     return 0;
 }
