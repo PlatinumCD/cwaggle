@@ -6,9 +6,10 @@
 #include <rabbitmq-c/tcp_socket.h>
 
 #ifdef DEBUG
-  #define DBGPRINT(...) do { fprintf(stderr, "[DEBUG rabbitmq] "); fprintf(stderr, __VA_ARGS__); } while(0)
+  #define DBGPRINT(...) \
+    do { fprintf(stderr, "[DEBUG rabbitmq] "); fprintf(stderr, __VA_ARGS__); } while (0)
 #else
-  #define DBGPRINT(...) do {} while(0)
+  #define DBGPRINT(...) do {} while (0)
 #endif
 
 struct RabbitMQConn {
@@ -16,48 +17,62 @@ struct RabbitMQConn {
     int connected;
 };
 
-// Simple error printer
-static void print_amqp_error(amqp_rpc_reply_t x, const char *context) {
+// Print AMQP errors
+static void print_amqp_error(amqp_rpc_reply_t x, const char *ctx) {
     switch (x.reply_type) {
     case AMQP_RESPONSE_NORMAL:
-        DBGPRINT("%s: normal.\n", context);
+        DBGPRINT("%s: normal.\n", ctx);
         break;
     case AMQP_RESPONSE_NONE:
-        fprintf(stderr, "%s: missing RPC reply type!\n", context);
+        fprintf(stderr, "%s: missing RPC reply type!\n", ctx);
         break;
     case AMQP_RESPONSE_LIBRARY_EXCEPTION:
-        fprintf(stderr, "%s: %s\n", context, amqp_error_string2(x.library_error));
+        fprintf(stderr, "%s: %s\n", ctx, amqp_error_string2(x.library_error));
         break;
     case AMQP_RESPONSE_SERVER_EXCEPTION:
         switch (x.reply.id) {
         case AMQP_CONNECTION_CLOSE_METHOD: {
             amqp_connection_close_t *m = (amqp_connection_close_t*) x.reply.decoded;
             fprintf(stderr, "%s: connection error %uh, msg: %.*s\n",
-                    context,
-                    m->reply_code,
-                    (int) m->reply_text.len,
-                    (char *) m->reply_text.bytes);
+                    ctx, m->reply_code, (int) m->reply_text.len,
+                    (char*) m->reply_text.bytes);
             break;
         }
         case AMQP_CHANNEL_CLOSE_METHOD: {
             amqp_channel_close_t *m = (amqp_channel_close_t*) x.reply.decoded;
             fprintf(stderr, "%s: channel error %uh, msg: %.*s\n",
-                    context,
-                    m->reply_code,
-                    (int) m->reply_text.len,
-                    (char *) m->reply_text.bytes);
+                    ctx, m->reply_code, (int) m->reply_text.len,
+                    (char*) m->reply_text.bytes);
             break;
         }
         default:
             fprintf(stderr, "%s: unknown server error, method id 0x%08X\n",
-                    context, x.reply.id);
+                    ctx, x.reply.id);
             break;
         }
         break;
     }
 }
 
-// Create a new connection with heartbeat
+// Drain all pending frames (heartbeats, etc.) until no more are available
+static void rabbitmq_conn_drain_frames(amqp_connection_state_t conn) {
+    while (1) {
+        amqp_frame_t frame;
+        struct timeval timeout = {0, 10000}; // ~10ms
+        int rc = amqp_simple_wait_frame_noblock(conn, &frame, &timeout);
+
+        if (rc == AMQP_STATUS_TIMEOUT) {
+            // No more frames waiting
+            break;
+        }
+        if (rc != AMQP_STATUS_OK) {
+            fprintf(stderr, "[rabbitmq] error draining frames: %d\n", rc);
+            break;
+        }
+        // If you need to handle certain frame types, you can do so here.
+    }
+}
+
 RabbitMQConn* rabbitmq_conn_new(const PluginConfig *config) {
     DBGPRINT("rabbitmq_conn_new(host=%s, port=%d)\n", config->host, config->port);
     if (!config) return NULL;
@@ -69,30 +84,25 @@ RabbitMQConn* rabbitmq_conn_new(const PluginConfig *config) {
     }
 
     rc->conn = amqp_new_connection();
-    amqp_socket_t *socket = amqp_tcp_socket_new(rc->conn);
-    if (!socket) {
+    amqp_socket_t *sock = amqp_tcp_socket_new(rc->conn);
+    if (!sock) {
         fprintf(stderr, "rabbitmq_conn_new: cannot create TCP socket\n");
         free(rc);
         return NULL;
     }
 
-    int status = amqp_socket_open(socket, config->host, config->port);
+    int status = amqp_socket_open(sock, config->host, config->port);
     if (status) {
-        fprintf(stderr, "rabbitmq_conn_new: socket_open failed with status %d\n", status);
+        fprintf(stderr, "rabbitmq_conn_new: socket_open failed %d\n", status);
         free(rc);
         return NULL;
     }
 
-    // Set heartbeat interval (10s here).
+    // Request heartbeat = 10s
     amqp_rpc_reply_t r = amqp_login(
-        rc->conn,
-        "/",
-        0,
-        131072,         // frame max
-        10,             // heartbeat in seconds
+        rc->conn, "/", 0, 131072, 10,
         AMQP_SASL_METHOD_PLAIN,
-        config->username,
-        config->password
+        config->username, config->password
     );
     if (r.reply_type != AMQP_RESPONSE_NORMAL) {
         print_amqp_error(r, "amqp_login");
@@ -100,7 +110,6 @@ RabbitMQConn* rabbitmq_conn_new(const PluginConfig *config) {
         return NULL;
     }
 
-    // Open channel
     amqp_channel_open(rc->conn, 1);
     r = amqp_get_rpc_reply(rc->conn);
     if (r.reply_type != AMQP_RESPONSE_NORMAL) {
@@ -123,15 +132,6 @@ RabbitMQConn* rabbitmq_conn_new(const PluginConfig *config) {
     return rc;
 }
 
-// Process incoming frames (including heartbeats) non-blocking
-static void rabbitmq_conn_heartbeat(RabbitMQConn *conn) {
-    if (!conn || !conn->connected) return;
-    amqp_frame_t frame;
-    // Poll for frames for ~10ms
-    struct timeval timeout = {0, 10000};
-    amqp_simple_wait_frame_noblock(conn->conn, &frame, &timeout);
-}
-
 void rabbitmq_conn_free(RabbitMQConn *conn) {
     DBGPRINT("rabbitmq_conn_free() called.\n");
     if (!conn) return;
@@ -143,81 +143,76 @@ void rabbitmq_conn_free(RabbitMQConn *conn) {
     free(conn);
 }
 
-// Publish a message with persistent delivery mode, user_id, app_id
-int rabbitmq_publish(RabbitMQConn *conn,
-                     const char *app_id,
-                     const char *username,
-                     const char *scope,
-                     const void *data,
-                     int app_id_len,
-                     int username_len,
-                     int data_len) {
-    DBGPRINT("rabbitmq_publish(scope=%s, app_id=%s, user_id=%s, data_len=%d)\n",
+int rabbitmq_publish(
+    RabbitMQConn *conn,
+    const char *app_id,
+    const char *username,
+    const char *scope,
+    const void *data,
+    int app_id_len,
+    int username_len,
+    int data_len
+) {
+    DBGPRINT("rabbitmq_publish(scope=%s, app_id=%s, user_id=%s)\n",
              scope ? scope : "NULL",
              app_id ? app_id : "NULL",
-             username ? username : "NULL",
-             data_len);
+             username ? username : "NULL");
+
     if (!conn || !conn->connected) return -1;
     if (!scope || !data) return -2;
 
-    amqp_bytes_t message_bytes = { .len = data_len, .bytes = (void*)data };
-    amqp_bytes_t app_id_bytes  = { .len = app_id_len, .bytes = (void*)app_id };
-    amqp_bytes_t user_id_bytes = { .len = username_len, .bytes = (void*)username };
+    amqp_bytes_t msg_bytes = { .len = data_len, .bytes = (void*) data };
+    amqp_bytes_t app_bytes = { .len = app_id_len, .bytes = (void*) app_id };
+    amqp_bytes_t usr_bytes = { .len = username_len, .bytes = (void*) username };
 
     amqp_basic_properties_t props;
     memset(&props, 0, sizeof(props));
-    props._flags     = AMQP_BASIC_DELIVERY_MODE_FLAG
-                     | AMQP_BASIC_USER_ID_FLAG
-                     | AMQP_BASIC_APP_ID_FLAG;
+    props._flags = (AMQP_BASIC_DELIVERY_MODE_FLAG |
+                    AMQP_BASIC_USER_ID_FLAG       |
+                    AMQP_BASIC_APP_ID_FLAG);
     props.delivery_mode = 2; // persistent
-    props.app_id        = app_id_bytes;
-    props.user_id       = user_id_bytes;
+    props.app_id        = app_bytes;
+    props.user_id       = usr_bytes;
 
     // Publish
     int status = amqp_basic_publish(
-        conn->conn,
-        1,
+        conn->conn, 1,
         amqp_cstring_bytes("to-validator"),
         amqp_cstring_bytes(scope),
-        0,
-        0,
+        0, 0,
         &props,
-        message_bytes
+        msg_bytes
     );
-
     if (status != AMQP_STATUS_OK) {
-        fprintf(stderr, "rabbitmq_publish: amqp_basic_publish failed with status: %d.\n", status);
+        fprintf(stderr, "[rabbitmq] amqp_basic_publish failed: %d\n", status);
         return -3;
     }
 
-    // Wait briefly for confirm
+    // Wait for confirm
     struct timeval timeout = {1, 0};
-    amqp_publisher_confirm_t result;
-    amqp_rpc_reply_t reply = amqp_publisher_confirm_wait(conn->conn, &timeout, &result);
+    amqp_publisher_confirm_t cresult;
+    amqp_rpc_reply_t reply = amqp_publisher_confirm_wait(conn->conn, &timeout, &cresult);
     if (reply.reply_type != AMQP_RESPONSE_NORMAL) {
         print_amqp_error(reply, "amqp_publisher_confirm_wait");
         return -4;
     }
 
-    // Heartbeat check to keep connection alive
-    rabbitmq_conn_heartbeat(conn);
+    // Drain extra frames so broker never times out
+    rabbitmq_conn_drain_frames(conn->conn);
 
     DBGPRINT("Publish success.\n");
     return 0;
 }
 
-// Example subscribe
 int rabbitmq_subscribe(RabbitMQConn *conn, const char **topics, int n) {
-    DBGPRINT("rabbitmq_subscribe() with %d topics.\n", n);
+    DBGPRINT("rabbitmq_subscribe: %d topics.\n", n);
     if (!conn || !conn->connected) return -1;
     if (n <= 0) return 0;
 
-    // In real usage, you'd bind a queue and consume, with a loop that also calls
-    // `rabbitmq_conn_heartbeat(conn)` periodically.
+    // Real usage would bind + consume in a loop that also calls rabbitmq_conn_drain_frames.
     printf("[RabbitMQ] Subscribing to %d topic(s):\n", n);
     for (int i = 0; i < n; i++) {
         printf("  -> %s\n", topics[i]);
-        // TODO: ch.queue_bind(...) etc.
     }
     return 0;
 }
