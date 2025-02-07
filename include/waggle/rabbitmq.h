@@ -5,26 +5,27 @@
 extern "C" {
 #endif
 
+#include <rabbitmq-c/amqp.h>
 #include "config.h"
 #include <stdint.h>
 
-/**
- * Opaque handle for a RabbitMQ connection wrapper.
- */
-typedef struct RabbitMQConn RabbitMQConn;
+typedef struct RabbitMQConn {
+    amqp_connection_state_t conn;
+    int connected;
+} RabbitMQConn;
 
 /**
  * Creates and returns a new RabbitMQ connection using
  * the specified config.
  * Returns NULL on failure.
  */
-RabbitMQConn* rabbitmq_conn_new(const PluginConfig *config);
+RabbitMQConn* rabbitmq_conn_create(const PluginConfig *config);
 
 /**
  * Closes and frees a RabbitMQ connection handle.
  * Safe to call with NULL.
  */
-void rabbitmq_conn_free(RabbitMQConn *conn);
+void rabbitmq_conn_close(RabbitMQConn *conn);
 
 /**
  * Publishes a message payload to the "to-validator" exchange with
@@ -32,7 +33,7 @@ void rabbitmq_conn_free(RabbitMQConn *conn);
  *
  * Returns 0 on success, nonzero on failure.
  */
-int rabbitmq_publish(RabbitMQConn *conn,
+int rabbitmq_publish_message(RabbitMQConn *conn,
                      const char *app_id,
                      const char *username,
                      const char *scope,
